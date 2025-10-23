@@ -1,0 +1,364 @@
+!-----------------------------------------------------------------------
+! Cisco ISR4321 CARESCAPE Router Configuration Template with NAT
+! Template Date 08-DEC-2022
+!-----------------------------------------------------------------------
+! AVALON HEALTH CARE CARBONEAR
+! 86 Highroad South, Bonavista, NL 	A1Y 1A4
+! Newfoundland and Labrador
+! Revision A
+! Dede Kikadi
+!-----------------------------------------------------------------------
+!
+! Directions for use:
+! Perform a find/replace "Ctrl+H" on any variables contained within the ## symbols
+! Any item in ## that was not replace with actual number should be removed from the configuration. 
+! Any addtional object groups, NAT statements, ACL lines, or header information should be inserted in a place that follows the current template layout
+! 
+! You will need to review and revise to add additional functionality
+!
+!-------------------------------------------------------------------------------------------------------------------------
+! Router Interface VARIABLES 
+!-------------------------------------------------------------------------------------------------------------------------
+!Router hostname nl-carbonear-main-4321 
+!
+! G0/0/0    Interface                  
+!               ROUTER_ENTERPRISE_IP          Router's Enterprise  IP Address             10.174.0.153 
+!               ROUTER_ENTERPRISE_NETMASK     Router's Enterprise  Net Mask               255.255.255.248 
+! G0/0/1    Interface            
+!               ROUTER_IX_IP                  Router's IX  IP Address                     172.18.254.254                               
+!               ROUTER_IX_NETMASK             Router's IX  NetMask                        255.255.0.0
+! DEFAULT_ROUTE                               Default Router IP Address                   10.174.0.158
+!-------------------------------------------------------------------------------------------------------------------------
+! CARESCAPE IX SUBNET VARIABLES
+!-------------------------------------------------------------------------------------------------------------------------
+! IX_NETWORK_ADDRESS                          IX Network Address                          172.18.0.0   
+! IX_NET_INVERSE_NETMASK                      IX Network Inverse NetMask                  0.0.255.255
+!-------------------------------------------------------------------------------------------------------------------------
+! CARESCAPE GATEWAY VARIABLES
+!-------------------------------------------------------------------------------------------------------------------------
+! CARESCAPE GATEWAY (network object groups)
+! CGS1_IX 	172.18.254.226			CGS1_IX_NAT		10.174.0.154
+! CGS1_ILO 	##CGS1_ILO_IP##			CGS1_ILO_NAT		##CGS1_ILO_NAT##
+! CGS1_ESX 	##CGS1_ESX_IP##			CGS1_ESX_NAT		##CGS1_ESX_NAT##
+! CGS2_IX 	##CGS2_IX_IP##			CGS2_IX_NAT		##CGS2_IX_NAT##
+! CGS2_ILO 	##CGS2_ILO_IP##			CGS2_ILO_NAT		##CGS2_ILO_NAT##
+! CGS2_ESXi 	##CGS2_ESX_IP##			CGS2_ESX_NAT		##CGS2_ESX_NAT##
+!
+!CARESCAPE GATEWAY (service object groups)
+! ADT Inbound 	##ADT_INBOUND_IP##  ##ADT_INBOUND_PORT##
+! HL7 Outbound  ##HL7_OUT_IP##      ##HL7_OUT_PORT##
+!
+!CARESCAPE GATEWAY (management object group)
+!Customer CSG Management IP ##CUSTOMER_CGS_MANAGER_IP##
+!
+!-------------------------------------------------------------------------------------------------------------------------
+! NETWORK PROTOCOL VARIABLES
+!-------------------------------------------------------------------------------------------------------------------------
+! NTP SERVER	ntp.easternhealth.local
+! DNS1		10.172.240.70
+! DNS2		10.172.240.71
+!-------------------------------------------------------------------------------------------------------------------------
+!
+!
+version 15.5
+service timestamps debug datetime msec
+service timestamps log datetime msec
+no platform punt-keepalive disable-kernel-core
+!
+hostname nl-carbonear-main-4321 
+!
+boot-start-marker
+boot-end-marker
+!
+!
+vrf definition Mgmt-intf
+ !
+ address-family ipv4
+ exit-address-family
+ !
+ address-family ipv6
+ exit-address-family
+!
+username admin privilege 15 secret 9 $9$imtXtWIWunyVBu$nFQeP5xBH292RXt/GRotF4oR53OVzOCcHXeDO8GObIs
+enable secret 9 $9$CVMxMNtInsePL8$p3528Fyzys/ChRnbJLV0ejAT3XrluxEX7HXNpEGS7J6
+!
+aaa new-model
+aaa authentication fail-message ^C UNAUTHORIZED LOGIN!!! ^C
+aaa authentication login default local
+aaa authentication enable default enable
+!
+!
+aaa session-id common
+!
+ip scp server enable
+!
+ip host us1-ws.service.gehealthcare.com 198.169.188.10
+ip host us1-rd.service.gehealthcare.com 198.169.188.11
+ip host insite.gehealthcare.com 198.169.189.25
+ip host as1-insite.gehealthcare.com 198.169.189.27
+ip host as2-insite.gehealthcare.com 198.169.189.29
+!
+ip domain name CARESCAPE
+!
+!
+ip name-server 10.172.240.70  
+ip name-server 10.172.240.71 
+!
+!
+zone security CARESCAPE
+zone security Enterprise
+!
+!
+class-map type inspect match-any ENoutbound_Class
+ match access-group name ENoutbound
+!
+!
+class-map type inspect match-any ENinbound_Class
+ match access-group name ENinbound
+!
+!
+policy-map type inspect ENinbound_Policy
+ class type inspect ENinbound_Class
+  inspect
+ class class-default
+  drop log
+policy-map type inspect ENoutbound_Policy
+ class type inspect ENoutbound_Class
+  inspect
+ class class-default
+  drop log
+!
+zone-pair security ENoutbound_Pair source CARESCAPE destination Enterprise
+ service-policy type inspect ENoutbound_Policy
+zone-pair security ENinbound_Pair source Enterprise destination CARESCAPE
+ service-policy type inspect ENinbound_Policy
+ !
+interface GigabitEthernet0/0/0
+ ip nat outside
+ ip address 10.174.0.153 255.255.255.248
+ zone-member security Enterprise
+ no shutdown
+ negotiation auto
+ load-interval 30
+!
+interface GigabitEthernet0/0/1
+ ip nat inside
+ ip address 172.18.254.254 255.255.0.0
+ zone-member security CARESCAPE
+ no shutdown
+ negotiation auto
+ load-interval 30
+!
+interface GigabitEthernet0
+ vrf forwarding Mgmt-intf
+ no ip address
+ shutdown
+ negotiation auto
+!
+ip tftp source-interface GigabitEthernet0/0/0 
+!
+ip forward-protocol nd
+no ip http server
+no ip http secure-server
+ip dns server
+ip route 0.0.0.0 0.0.0.0 10.174.0.158
+!
+!
+ip ssh version 2
+crypto key generate rsa modulus 2048
+ip ssh time-out 60
+ip ssh authentication-retries 3
+ip scp server enable
+!
+!------------------------------------------------------------------------------
+! CARESCAPE GATEWAY Object Groups (IX)
+!------------------------------------------------------------------------------
+object-group network CARESCAPE_GATEWAY
+ host 172.18.254.226
+ host ##CGS2_IX_IP##
+ !delete the following line if CGS hosts are filled out
+ host 172.18.254.254
+!
+object-group network CARESCAPE_GATEWAY_ILO
+ host ##CGS1_ILO_IP##
+ host ##CGS1_ESX_IP##
+ host ##CGS2_ILO_IP##
+ host ##CGS2_ESX_IP##
+ !delete the following line if CGS ILO hosts are filled out
+ host 172.18.254.254
+!
+object-group service CARESCAPE_GATEWAY_IN
+!MANAGEMENT ONLY - NO HL7/ADT PORTS
+ tcp-udp 5800
+ tcp-udp 5900
+ tcp-udp 8080
+ tcp-udp 10000
+!
+object-group service CARESCAPE_GATEWAY_OUT
+!MANAGEMENT ONLY - NO HL7/ADT PORTS
+ tcp-udp 443
+ tcp-udp 25
+!
+object-group network CSG_IPACCESS
+ 150.2.0.0 255.255.0.0
+ host ##CUSTOMER_CGS_MANAGER_IP##
+!
+object-group service ADT_HL7_IN_PORTS
+ icmp
+ tcp-udp ##ADT_INBOUND_PORT##
+!
+object-group service ADT_HL7_OUT_PORTS
+ icmp
+ tcp-udp ##HL7_OUT_PORT##
+!
+object-group network ADT_HL7_IN_IP
+ host ##ADT_INBOUND_IP##
+ !delete the following line if specific IPs are filled out
+ host 172.18.254.254
+!
+object-group network ADT_HL7_OUT_IP
+ host ##HL7_OUT_IP##
+ !delete the following line if specific IPs are filled out
+ host 172.18.254.254
+!
+!------------------------------------------------------------------------------
+! GLOBAL ILO SERVICE OBJECT GROUP - NO OUTBOUND ILO SERVICE GROUP REQUIRED
+!------------------------------------------------------------------------------
+!
+object-group service ILO_IN
+ tcp-udp 10000
+ tcp-udp 443
+ tcp-udp 17988
+ tcp-udp 17990
+ tcp-udp 23
+ tcp-udp 8080
+!
+!------------------------------------------------------------------------------
+! INTERNAL RESOURCES OBJECT GROUP
+!------------------------------------------------------------------------------
+!
+object-group network IX_NETWORK_ADDRESS
+ 172.18.0.0 255.255.0.0
+!
+object-group network INSITE_IPS
+!DON'T CHANGE
+ host 150.2.1.251
+ host 198.169.188.10
+ host 198.169.188.11
+ host 198.169.189.25
+ host 198.169.189.27
+ host 198.169.189.29
+!
+object-group service INSITE_OUT
+ tcp-udp 443
+ tcp-udp 8002
+!
+!-------------------------------------------------------------------------------------------------------------------------
+! NETWORK PROTOCOL OBJECT GROUPS
+!-------------------------------------------------------------------------------------------------------------------------
+!
+object-group service COMMON_NETWORK_PORTS
+ !no additional ports should be added to this object group
+ tcp-udp 53
+ tcp-udp 123
+ tcp-udp 9100
+ tcp-udp 631
+ tcp-udp 161
+ tcp-udp 162
+!
+!-------------------------------------------------------------------------------------------------------------------------
+!
+!==============================================================================
+!                          NETWORK ADDRESS TRANSLATIONS AND ACLs
+!==============================================================================
+ip nat inside source list 1 interface GigabitEthernet0/0/0 overload
+access-list 1 permit 172.18.0.0 0.0.255.255
+!
+! CARESCAPE GATEWAY STATIC NATS
+ip nat inside source static 172.18.254.226 10.174.0.154  
+ip nat inside source static ##CGS1_ILO_IP## ##CGS1_ILO_NAT##
+ip nat inside source static ##CGS1_ESX_IP## ##CGS1_ESX_NAT##  
+ip nat inside source static ##CGS2_IX_IP## ##CGS2_IX_NAT##  
+ip nat inside source static ##CGS2_ILO_IP## ##CGS2_ILO_NAT##
+ip nat inside source static ##CGS2_ESX_IP## ##CGS2_ESX_NAT##  
+!
+!==============================================================================
+!                          ENTEPRISE INBOUND ACL
+!==============================================================================
+ip access-list extended ENinbound
+remark ****DO NOT CHANGE ACL LINES. MANAGE BEHAVIOR VIA OBJECT GROUPS****
+!
+!----- Inbound Access to CARESCAPE GATEWAY for Management / Integration
+permit object-group CARESCAPE_GATEWAY_IN object-group CSG_IPACCESS object-group CARESCAPE_GATEWAY
+!
+!----- Inbound Access to CARESCAPE Gateway ILO Port
+permit object-group ILO_IN object-group CSG_IPACCESS object-group CARESCAPE_GATEWAY_ILO
+!
+!----- Inbound Access to CARESCAPE GATEWAY for ADT/HL7
+permit object-group ADT_HL7_IN_PORTS object-group ADT_HL7_IN_IP object-group CARESCAPE_GATEWAY
+!
+!----- GENERAL ICMP PERMIT TO ANYTHING
+permit icmp any any
+!
+!
+!==============================================================================
+!                          CAPRESCAPE OUTBOUND ACL
+!==============================================================================
+ip access-list extended ENoutbound
+remark ****DO NOT CHANGE ACL LINES. MANAGE BEHAVIOR VIA OBJECT GROUPS****
+!
+!----- CARESCAPE GATEWAY OUTBOUND FOR MANAGEMENT 
+permit object-group CARESCAPE_GATEWAY_OUT object-group CARESCAPE_GATEWAY object-group CSG_IPACCESS
+!
+!----- CARESCAPE GATEWAY OUTBOUND FOR HL7/ADT
+permit object-group ADT_HL7_OUT_PORTS object-group CARESCAPE_GATEWAY object-group ADT_HL7_OUT_IP
+!
+!----- INSITE CONNECTIVITY - INTERNET AND VPN TUNNEL
+permit object-group INSITE_OUT object-group IX_NETWORK_ADDRESS object-group INSITE_IPS
+!
+!----- COMMON_NETWORK_PORTS OUT TO ANY - NTP/DNS/PRINTING ONLY
+permit object-group COMMON_NETWORK_PORTS object-group IX_NETWORK_ADDRESS any
+!
+!----- GENERAL ICMP PERMIT TO ANYTHING
+permit icmp any any
+!
+!
+!----------------------------------------------------------------------------
+!
+control-plane
+!
+banner login ^C
+|----------------------------------------------------------------|
+| This system is for the use of authorized users only.
+| Individuals using this computer system without authority may
+| be prosecuted within the limits of the law. The content of this
+| device is proprietary in nature and remains the property of
+| GE Healthcare Information Technologies. Any reproduction in
+| whole or in part is strictly prohibited.
+|----------------------------------------------------------------|
+^C
+!
+alias exec sessions show policy-map type inspect zone-pair session
+alias exec firewall show policy-firewall sessions platform all
+alias exec ha show redundancy app group 1
+alias exec vip show redundancy app if-mgr group 1
+!
+line con 0
+ logging synchronous
+ stopbits 1
+ privilege level 15
+line aux 0
+ modem InOut
+ transport input all
+ stopbits 1
+ flowcontrol hardware
+line vty 0 4
+ login authentication default 
+ transport input ssh
+ transport output ssh telnet
+!
+!
+no network-clock synchronization automatic
+ntp server ntp.easternhealth.local
+!
+end
